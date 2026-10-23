@@ -1,0 +1,11 @@
+{
+  "name": "opti",
+  "version": "0.1.0",
+  "description": "Optimizador de corte de vidrio que minimiza el desperdicio real y aprovecha retazos",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test",
+    "start": "npx --yes http-server -c-1 ."
+  }
+}

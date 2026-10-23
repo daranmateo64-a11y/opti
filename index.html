@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Opti Vidrio</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header>
+    <h1>Opti Vidrio</h1>
+    <p>Elige la plancha que deja <strong>menos desperdicio real</strong>: el sobrante grande vuelve al stock como retazo, el chico se cuenta como desperdicio.</p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Ajustes</h2>
+      <div class="settings">
+        <label>Ancho de corte (mm) <input type="number" id="kerf" min="0" step="0.5"></label>
+        <label>Despunte de borde (mm) <input type="number" id="trim" min="0" step="1"></label>
+        <label>Retazo útil: lado mín. (mm) <input type="number" id="minW" min="0" step="10"></label>
+        <label>Retazo útil: otro lado mín. (mm) <input type="number" id="minH" min="0" step="10"></label>
+        <label class="check"><input type="checkbox" id="reuse"> Reutilizar retazos que salen en el mismo trabajo</label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Stock (planchas y retazos)</h2>
+      <p class="hint">Cargá cada tipo y espesor que tengas; podés agregar los que quieras. Cantidad vacía = sin límite.</p>
+      <table>
+        <thead><tr><th>Tipo</th><th>Espesor (mm)</th><th>Ancho</th><th>Alto</th><th>Cantidad</th><th>Retazo</th><th></th></tr></thead>
+        <tbody id="stock-body"></tbody>
+      </table>
+      <button type="button" id="add-stock">+ Agregar plancha</button>
+    </section>
+
+    <section class="card">
+      <h2>Piezas a cortar</h2>
+      <table>
+        <thead><tr><th>Nombre</th><th>Tipo</th><th>Espesor (mm)</th><th>Ancho</th><th>Alto</th><th>Cantidad</th><th>Rotar</th><th></th></tr></thead>
+        <tbody id="pieces-body"></tbody>
+      </table>
+      <button type="button" id="add-piece">+ Agregar pieza</button>
+    </section>
+
+    <div class="actions">
+      <button type="button" id="run" class="primary">Optimizar</button>
+    </div>
+
+    <section id="results"></section>
+  </main>
+
+  <datalist id="types"></datalist>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
