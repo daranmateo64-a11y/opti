@@ -42,7 +42,15 @@ tiene plancha de su tipo/espesor, aparece como "sin colocar".
 - Ancho de corte y despunte de borde configurables.
 - Fuera de claude.ai los datos se guardan en el navegador.
 
-## En el teléfono
+## En el teléfono (sin cuenta)
+
+Página: https://daranmateo64-a11y.github.io/opti/ (GitHub Pages, publicada desde esta rama, carpeta raíz).
+
+Se puede instalar como app: en Android, Chrome → menú ⋮ → *Instalar app* (o *Agregar a pantalla principal*);
+en iPhone, Safari → Compartir → *Agregar a inicio*. Una vez instalada funciona sin internet. El stock se guarda en el
+teléfono, así que conviene usar *Descargar stock* cada tanto como copia de seguridad.
+
+## En claude.ai
 
 La app está publicada en claude.ai: https://claude.ai/artifact/X3kFxCtRrDBZH9Yn7Q2qia
 

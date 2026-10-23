@@ -84,7 +84,9 @@ function syncNow() {
 async function connectRemote() {
   const db = await window.claude?.use?.('db').catch(() => null);
   if (!db) {
-    setSyncStatus('Guardado sólo en este navegador');
+    setSyncStatus('Guardado en este dispositivo');
+    // Pide al navegador que no borre los datos por falta de espacio.
+    navigator.storage?.persist?.().catch(() => {});
     return;
   }
   remote = db;
@@ -545,4 +547,8 @@ function run() {
 bindSettings();
 renderStock();
 connectRemote();
+// Instalable y usable sin conexión cuando se sirve como página web (no dentro de claude.ai).
+if ('serviceWorker' in navigator && !window.claude && location.protocol.startsWith('http')) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
 showTab(state.stock.length ? state.tab : 'stock');
