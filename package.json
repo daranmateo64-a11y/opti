@@ -6,6 +6,7 @@
   "private": true,
   "scripts": {
     "test": "node --test",
-    "start": "npx --yes http-server -c-1 ."
+    "start": "npx --yes http-server -c-1 .",
+    "build": "node scripts/build.mjs"
   }
 }

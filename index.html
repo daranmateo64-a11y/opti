@@ -10,6 +10,7 @@
   <header>
     <h1>Opti Vidrio</h1>
     <p>Elige la plancha que deja <strong>menos desperdicio real</strong>: el sobrante grande vuelve al stock como retazo, el chico se cuenta como desperdicio.</p>
+    <p id="sync" class="sync"></p>
     <nav class="tabs">
       <button type="button" data-tab="stock">1. Stock</button>
       <button type="button" data-tab="cut">2. Cortar</button>
@@ -21,7 +22,7 @@
     <div id="tab-stock" class="tab">
       <section class="card">
         <h2>Stock actual de vidrios</h2>
-        <p class="hint">Cargá todas las planchas y retazos que tenés. Se guarda automáticamente en este navegador.</p>
+        <p class="hint">Cargá todas las planchas y retazos que tenés. Se guarda automáticamente.</p>
         <div id="stock-summary" class="summary"></div>
         <table>
           <thead><tr><th>Tipo</th><th>Espesor (mm)</th><th>Ancho</th><th>Alto</th><th>Cantidad</th><th>Retazo</th><th></th></tr></thead>
@@ -39,6 +40,7 @@
           <button type="button" id="export">Descargar stock</button>
           <label class="file-btn">Cargar desde archivo <input type="file" id="import" accept="application/json,.json"></label>
         </div>
+        <div id="import-msg"></div>
       </section>
     </div>
 

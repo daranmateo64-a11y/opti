@@ -35,6 +35,88 @@ function save() {
   } catch {
     // Ignorar: la app funciona igual sin guardar.
   }
+  scheduleSync();
+}
+
+// ---------- Guardado en el servidor ----------
+// Publicada en claude.ai, el stock y los ajustes se guardan en el servidor y no dependen
+// de los datos del navegador. Abierta como archivo suelto queda sólo el guardado local.
+// Las piezas a cortar son un borrador y se guardan sólo en el dispositivo.
+
+const REMOTE_DOC = 'opti/stock';
+let remote = null;
+let lastSynced = null;
+let syncTimer = null;
+let syncQueue = Promise.resolve();
+
+function sharedJson() {
+  return JSON.stringify({ stock: state.stock, settings: state.settings });
+}
+
+function setSyncStatus(text, isError = false) {
+  const el = $('#sync');
+  el.textContent = text;
+  el.classList.toggle('warn', isError);
+}
+
+function scheduleSync() {
+  if (!remote) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncNow, 600);
+}
+
+function syncNow() {
+  syncTimer = null;
+  const json = sharedJson();
+  if (json === lastSynced) return;
+  lastSynced = json;
+  setSyncStatus('Guardando…');
+  // Una escritura a la vez sobre el mismo documento.
+  syncQueue = syncQueue
+    .then(() => remote.doc(REMOTE_DOC).set(JSON.parse(json)))
+    .then(() => setSyncStatus('Stock guardado en la nube'))
+    .catch(() => {
+      lastSynced = null;
+      setSyncStatus('No se pudo guardar en la nube. Revisá la conexión; los cambios siguen en este teléfono.', true);
+    });
+}
+
+async function connectRemote() {
+  const db = await window.claude?.use?.('db').catch(() => null);
+  if (!db) {
+    setSyncStatus('Guardado sólo en este navegador');
+    return;
+  }
+  remote = db;
+  setSyncStatus('Conectando…');
+  db.doc(REMOTE_DOC).onSnapshot(
+    (snap) => {
+      // Mientras haya cambios propios sin subir, lo local manda.
+      if (snap.metadata.hasPendingWrites || syncTimer) return;
+      if (!snap.exists) {
+        if (state.stock.length) syncNow();
+        else setSyncStatus('Stock guardado en la nube');
+        return;
+      }
+      const data = snap.data();
+      const json = JSON.stringify({ stock: data.stock ?? [], settings: { ...defaults.settings, ...data.settings } });
+      lastSynced = json;
+      setSyncStatus('Stock guardado en la nube');
+      if (json === sharedJson()) return;
+      const incoming = JSON.parse(json);
+      state.stock = incoming.stock;
+      state.settings = incoming.settings;
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch {
+        // Ignorar.
+      }
+      fillSettings();
+      renderStock();
+      renderPieces();
+    },
+    () => setSyncStatus('Se perdió la conexión con la nube. Recargá la página.', true),
+  );
 }
 
 const $ = (sel) => document.querySelector(sel);
@@ -49,25 +131,32 @@ function showTab(name) {
   save();
   for (const b of document.querySelectorAll('.tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === name));
   for (const t of document.querySelectorAll('.tab')) t.hidden = t.id !== `tab-${name}`;
-  if (name === 'cut') renderPieces();
+  if (name !== 'cut') return;
+  if (!state.pieces.length && materials().length) addPiece();
+  else renderPieces();
 }
 
 for (const b of document.querySelectorAll('.tabs button')) b.addEventListener('click', () => showTab(b.dataset.tab));
 
 // ---------- Ajustes ----------
 
+const SETTING_INPUTS = { kerf: 'kerf', trim: 'trim', minW: 'minRemnantWidth', minH: 'minRemnantHeight' };
+
+function fillSettings() {
+  for (const [id, key] of Object.entries(SETTING_INPUTS)) $(`#${id}`).value = state.settings[key];
+  $('#reuse').checked = state.settings.reuseRemnants;
+}
+
 function bindSettings() {
-  const map = { kerf: 'kerf', trim: 'trim', minW: 'minRemnantWidth', minH: 'minRemnantHeight' };
-  for (const [id, key] of Object.entries(map)) {
+  fillSettings();
+  for (const [id, key] of Object.entries(SETTING_INPUTS)) {
     const el = $(`#${id}`);
-    el.value = state.settings[key];
     el.addEventListener('input', () => {
       state.settings[key] = Number(el.value) || 0;
       save();
     });
   }
   const reuse = $('#reuse');
-  reuse.checked = state.settings.reuseRemnants;
   reuse.addEventListener('change', () => {
     state.settings.reuseRemnants = reuse.checked;
     save();
@@ -141,6 +230,12 @@ function renderStockSummary() {
   refreshTypes();
 }
 
+// En pantallas angostas cada fila se muestra como tarjeta; cada celda lleva el título de su columna.
+function labelCells(tbody) {
+  const heads = [...tbody.closest('table').querySelectorAll('thead th')].map((th) => th.textContent);
+  for (const tr of tbody.rows) [...tr.cells].forEach((td, i) => (td.dataset.label = heads[i] || ''));
+}
+
 function renderStock() {
   const sb = $('#stock-body');
   sb.replaceChildren();
@@ -157,6 +252,7 @@ function renderStock() {
     );
     sb.append(tr);
   }
+  labelCells(sb);
   renderStockSummary();
 }
 
@@ -184,11 +280,18 @@ function refreshTypes() {
 $('#add-stock').addEventListener('click', () => addStockRow(false));
 $('#add-remnant').addEventListener('click', () => addStockRow(true));
 
-$('#export').addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify({ stock: state.stock, settings: state.settings }, null, 2)], { type: 'application/json' });
+$('#export').addEventListener('click', async () => {
+  const data = JSON.stringify({ stock: state.stock, settings: state.settings }, null, 2);
+  const filename = `stock-vidrio-${new Date().toISOString().slice(0, 10)}.json`;
+  const downloads = await window.claude?.use?.('downloads').catch(() => null);
+  if (downloads) {
+    // El visor pide confirmación; si la persona cancela no hay nada que hacer.
+    await downloads.save({ filename, data }).catch(() => {});
+    return;
+  }
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `stock-vidrio-${new Date().toISOString().slice(0, 10)}.json`;
+  a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(a.href);
 });
@@ -197,17 +300,31 @@ $('#import').addEventListener('change', async (e) => {
   const file = e.target.files[0];
   e.target.value = '';
   if (!file) return;
+  const box = $('#import-msg');
+  box.replaceChildren();
+  let data;
   try {
-    const data = JSON.parse(await file.text());
+    data = JSON.parse(await file.text());
     if (!Array.isArray(data.stock)) throw new Error('formato');
-    if (!confirm(`Esto reemplaza el stock actual por ${data.stock.length} fila(s) del archivo. ¿Continuar?`)) return;
+  } catch {
+    box.append(Object.assign(document.createElement('p'), { className: 'warn', textContent: 'No se pudo leer el archivo. Tiene que ser un stock descargado desde esta página.' }));
+    return;
+  }
+  const msg = Object.assign(document.createElement('p'), { textContent: `Esto reemplaza el stock actual por las ${data.stock.length} fila(s) del archivo.` });
+  const yes = Object.assign(document.createElement('button'), { type: 'button', className: 'primary', textContent: 'Reemplazar stock' });
+  const no = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Cancelar' });
+  yes.addEventListener('click', () => {
     state.stock = data.stock.map((r) => ({ ...r, id: r.id || uid() }));
     if (data.settings) state.settings = { ...state.settings, ...data.settings };
     save();
+    fillSettings();
     renderStock();
-  } catch {
-    alert('No se pudo leer el archivo. Tiene que ser un stock descargado desde esta página.');
-  }
+    box.replaceChildren(Object.assign(document.createElement('p'), { className: 'ok', textContent: 'Stock reemplazado.' }));
+  });
+  no.addEventListener('click', () => box.replaceChildren());
+  const row = Object.assign(document.createElement('div'), { className: 'row' });
+  row.append(yes, no);
+  box.append(msg, row);
 });
 
 // ---------- Piezas a cortar ----------
@@ -276,6 +393,7 @@ function renderPieces() {
     );
     pb.append(tr);
   }
+  labelCells(pb);
 }
 
 function addPiece() {
@@ -426,5 +544,5 @@ function run() {
 
 bindSettings();
 renderStock();
-if (!state.pieces.length && materials().length) addPiece();
+connectRemote();
 showTab(state.stock.length ? state.tab : 'stock');

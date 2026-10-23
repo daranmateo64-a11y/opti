@@ -40,9 +40,16 @@ tiene plancha de su tipo/espesor, aparece como "sin colocar".
 - Los retazos útiles que salen de un corte se pueden reutilizar en el mismo trabajo.
 - Piezas con o sin rotación (por ejemplo vidrios con dibujo o veta).
 - Ancho de corte y despunte de borde configurables.
-- Los datos se guardan en el navegador.
+- Fuera de claude.ai los datos se guardan en el navegador.
 
-## Abrir la página
+## En el teléfono
+
+La app está publicada en claude.ai: https://claude.ai/artifact/X3kFxCtRrDBZH9Yn7Q2qia
+
+Ahí el stock y los ajustes se guardan en el servidor, no en el navegador. Para actualizarla después de cambiar el
+código: `npm run build` arma `dist/opti-vidrio.html` (una sola página con todo embebido), que es lo que se publica.
+
+## Abrir la página en la computadora
 
 Es una página estática, sin instalación. Servila con cualquier servidor estático y abrí `index.html`:
 
