@@ -24,17 +24,25 @@ No hace falta definirlos de antemano: cargá en el stock cada combinación que t
 *Laminado 3+3 6 mm*, *Espejo 4 mm*…). Las piezas sólo se cortan de planchas del mismo tipo y espesor. Si una pieza no
 tiene plancha de su tipo/espesor, aparece como "sin colocar".
 
+## Cómo se usa
+
+1. **Stock**: cargá todas las planchas y retazos que tenés (tipo, espesor, medidas, cantidad). Se guarda solo en el
+   navegador. Con *Descargar stock* te llevás una copia a un archivo y con *Cargar desde archivo* la recuperás.
+2. **Cortar**: elegí el vidrio (sólo aparecen los tipos y espesores que hay en el stock), ingresá ancho, alto y
+   cantidad de la pieza que necesitás y tocá *Buscar mejor corte*.
+3. Revisá el plan y tocá **Confirmar corte y actualizar stock**: se descuentan las planchas o retazos usados, los
+   retazos que se agotan desaparecen y los retazos útiles que sobran se agregan al stock.
+
 ## Otras funciones
 
 - Cantidad de planchas por medida (vacío = sin límite).
 - Retazos del stock marcados como tales (se usan con prioridad).
 - Los retazos útiles que salen de un corte se pueden reutilizar en el mismo trabajo.
-- Botón para guardar los retazos que sobran en el stock.
 - Piezas con o sin rotación (por ejemplo vidrios con dibujo o veta).
 - Ancho de corte y despunte de borde configurables.
 - Los datos se guardan en el navegador.
 
-## Uso
+## Abrir la página
 
 Es una página estática, sin instalación. Servila con cualquier servidor estático y abrí `index.html`:
 

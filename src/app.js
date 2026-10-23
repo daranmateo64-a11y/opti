@@ -1,21 +1,16 @@
-import { optimize } from './optimizer.js';
+import { optimize, groupKey } from './optimizer.js';
+import { applyCut, summarize, isUnlimited } from './stock.js';
 
 const STORAGE_KEY = 'opti-vidrio-v1';
 
 const defaults = {
+  tab: 'stock',
   settings: { kerf: 0, trim: 10, minRemnantWidth: 300, minRemnantHeight: 300, reuseRemnants: true },
-  stock: [
-    { id: uid(), type: 'Float incoloro', thickness: 4, width: 3600, height: 2500, quantity: '', isRemnant: false },
-    { id: uid(), type: 'Float incoloro', thickness: 6, width: 3600, height: 2500, quantity: '', isRemnant: false },
-    { id: uid(), type: 'Laminado 3+3', thickness: 6, width: 3210, height: 2250, quantity: '', isRemnant: false },
-  ],
-  pieces: [
-    { id: uid(), label: 'Ventana', type: 'Float incoloro', thickness: 4, width: 1200, height: 800, quantity: 4, rotate: true },
-  ],
+  stock: [],
+  pieces: [],
 };
 
 let state = load();
-let lastResult = null;
 
 function uid() {
   return Math.random().toString(36).slice(2, 10);
@@ -24,7 +19,10 @@ function uid() {
 function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return { ...structuredClone(defaults), ...JSON.parse(raw) };
+    if (raw) {
+      const saved = JSON.parse(raw);
+      return { ...structuredClone(defaults), ...saved, settings: { ...defaults.settings, ...saved.settings } };
+    }
   } catch {
     // Sin almacenamiento disponible: se usan los valores por defecto.
   }
@@ -40,6 +38,23 @@ function save() {
 }
 
 const $ = (sel) => document.querySelector(sel);
+
+const m2 = (mm2) => (mm2 / 1e6).toLocaleString('es', { maximumFractionDigits: 2 }) + ' m²';
+const pct = (a, b) => (b > 0 ? ((a / b) * 100).toLocaleString('es', { maximumFractionDigits: 1 }) + ' %' : '–');
+
+// ---------- Pestañas ----------
+
+function showTab(name) {
+  state.tab = name;
+  save();
+  for (const b of document.querySelectorAll('.tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === name));
+  for (const t of document.querySelectorAll('.tab')) t.hidden = t.id !== `tab-${name}`;
+  if (name === 'cut') renderPieces();
+}
+
+for (const b of document.querySelectorAll('.tabs button')) b.addEventListener('click', () => showTab(b.dataset.tab));
+
+// ---------- Ajustes ----------
 
 function bindSettings() {
   const map = { kerf: 'kerf', trim: 'trim', minW: 'minRemnantWidth', minH: 'minRemnantHeight' };
@@ -59,7 +74,9 @@ function bindSettings() {
   });
 }
 
-function input(row, key, type, attrs = {}) {
+// ---------- Celdas editables ----------
+
+function input(row, key, type, attrs = {}, onChange) {
   const el = document.createElement('input');
   el.type = type;
   if (type === 'checkbox') el.checked = !!row[key];
@@ -68,14 +85,14 @@ function input(row, key, type, attrs = {}) {
   el.addEventListener(type === 'checkbox' ? 'change' : 'input', () => {
     row[key] = type === 'checkbox' ? el.checked : type === 'number' && el.value !== '' ? Number(el.value) : el.value;
     save();
-    if (key === 'type') refreshTypes();
+    onChange?.();
   });
   const td = document.createElement('td');
   td.append(el);
   return td;
 }
 
-function deleteCell(list, row) {
+function deleteCell(list, row, rerender) {
   const td = document.createElement('td');
   const b = document.createElement('button');
   b.type = 'button';
@@ -85,55 +102,194 @@ function deleteCell(list, row) {
   b.addEventListener('click', () => {
     list.splice(list.indexOf(row), 1);
     save();
-    renderTables();
+    rerender();
   });
   td.append(b);
   return td;
 }
 
-function renderTables() {
+// ---------- Stock ----------
+
+function stat(k, v) {
+  const d = document.createElement('div');
+  d.className = 'stat';
+  const vEl = document.createElement('div');
+  vEl.className = 'v';
+  vEl.textContent = v;
+  const kEl = document.createElement('div');
+  kEl.className = 'k';
+  kEl.textContent = k;
+  d.append(vEl, kEl);
+  return d;
+}
+
+function renderStockSummary() {
+  const box = $('#stock-summary');
+  const groups = summarize(state.stock);
+  box.replaceChildren(
+    ...groups.map((g) => {
+      const sheets = g.unlimited ? 'sin límite' : `${g.sheets} plancha(s)`;
+      return stat(`${g.type} ${g.thickness} mm`, `${sheets} · ${g.remnants} retazo(s)`);
+    }),
+  );
+  if (!groups.length) {
+    const p = document.createElement('p');
+    p.className = 'hint';
+    p.textContent = 'Todavía no hay vidrios cargados.';
+    box.append(p);
+  }
+  refreshTypes();
+}
+
+function renderStock() {
   const sb = $('#stock-body');
   sb.replaceChildren();
   for (const row of state.stock) {
     const tr = document.createElement('tr');
     tr.append(
-      input(row, 'type', 'text', { list: 'types', placeholder: 'Float, Laminado…' }),
-      input(row, 'thickness', 'number', { min: 0, step: 0.5 }),
-      input(row, 'width', 'number', { min: 0 }),
-      input(row, 'height', 'number', { min: 0 }),
-      input(row, 'quantity', 'number', { min: 0, placeholder: '∞' }),
-      input(row, 'isRemnant', 'checkbox'),
-      deleteCell(state.stock, row),
+      input(row, 'type', 'text', { list: 'types', placeholder: 'Float, Laminado…' }, renderStockSummary),
+      input(row, 'thickness', 'number', { min: 0, step: 0.5 }, renderStockSummary),
+      input(row, 'width', 'number', { min: 0 }, renderStockSummary),
+      input(row, 'height', 'number', { min: 0 }, renderStockSummary),
+      input(row, 'quantity', 'number', { min: 0, placeholder: '∞' }, renderStockSummary),
+      input(row, 'isRemnant', 'checkbox', {}, renderStockSummary),
+      deleteCell(state.stock, row, renderStock),
     );
     sb.append(tr);
   }
+  renderStockSummary();
+}
 
-  const pb = $('#pieces-body');
-  pb.replaceChildren();
-  for (const row of state.pieces) {
-    const tr = document.createElement('tr');
-    tr.append(
-      input(row, 'label', 'text', { placeholder: 'Opcional' }),
-      input(row, 'type', 'text', { list: 'types' }),
-      input(row, 'thickness', 'number', { min: 0, step: 0.5 }),
-      input(row, 'width', 'number', { min: 0 }),
-      input(row, 'height', 'number', { min: 0 }),
-      input(row, 'quantity', 'number', { min: 1 }),
-      input(row, 'rotate', 'checkbox'),
-      deleteCell(state.pieces, row),
-    );
-    pb.append(tr);
-  }
-  refreshTypes();
+function addStockRow(isRemnant) {
+  const prev = state.stock.at(-1) || {};
+  state.stock.push({
+    id: uid(),
+    type: prev.type || '',
+    thickness: prev.thickness || 4,
+    width: isRemnant ? '' : prev.width || 3600,
+    height: isRemnant ? '' : prev.height || 2500,
+    quantity: 1,
+    isRemnant,
+  });
+  save();
+  renderStock();
+  $('#stock-body tr:last-child input').focus();
 }
 
 function refreshTypes() {
-  const types = new Set([...state.stock, ...state.pieces].map((r) => String(r.type || '').trim()).filter(Boolean));
+  const types = new Set(state.stock.map((r) => String(r.type || '').trim()).filter(Boolean));
   $('#types').replaceChildren(...[...types].map((t) => Object.assign(document.createElement('option'), { value: t })));
 }
 
-const m2 = (mm2) => (mm2 / 1e6).toLocaleString('es', { maximumFractionDigits: 2 }) + ' m²';
-const pct = (a, b) => (b > 0 ? ((a / b) * 100).toLocaleString('es', { maximumFractionDigits: 1 }) + ' %' : '–');
+$('#add-stock').addEventListener('click', () => addStockRow(false));
+$('#add-remnant').addEventListener('click', () => addStockRow(true));
+
+$('#export').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify({ stock: state.stock, settings: state.settings }, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `stock-vidrio-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+
+$('#import').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (!Array.isArray(data.stock)) throw new Error('formato');
+    if (!confirm(`Esto reemplaza el stock actual por ${data.stock.length} fila(s) del archivo. ¿Continuar?`)) return;
+    state.stock = data.stock.map((r) => ({ ...r, id: r.id || uid() }));
+    if (data.settings) state.settings = { ...state.settings, ...data.settings };
+    save();
+    renderStock();
+  } catch {
+    alert('No se pudo leer el archivo. Tiene que ser un stock descargado desde esta página.');
+  }
+});
+
+// ---------- Piezas a cortar ----------
+
+function materials() {
+  return summarize(state.stock);
+}
+
+function materialSelect(row) {
+  const td = document.createElement('td');
+  const sel = document.createElement('select');
+  const mats = materials();
+  const current = groupKey(row.type, row.thickness);
+  for (const m of mats) {
+    const o = document.createElement('option');
+    o.value = m.key;
+    o.textContent = `${m.type} ${m.thickness} mm`;
+    sel.append(o);
+  }
+  if (!mats.some((m) => m.key === current)) {
+    // El vidrio de la pieza ya no está en el stock: mostrarlo igual para no cambiarlo sin aviso.
+    const o = document.createElement('option');
+    o.value = current;
+    o.textContent = `${row.type} ${row.thickness} mm (sin stock)`;
+    sel.prepend(o);
+  }
+  sel.value = current;
+  sel.addEventListener('change', () => {
+    const m = mats.find((x) => x.key === sel.value);
+    if (m) {
+      row.type = m.type;
+      row.thickness = m.thickness;
+      save();
+    }
+  });
+  td.append(sel);
+  return td;
+}
+
+function renderPieces() {
+  const pb = $('#pieces-body');
+  pb.replaceChildren();
+  const hasStock = materials().length > 0;
+  $('#add-piece').disabled = !hasStock;
+  $('#run').disabled = !hasStock;
+  if (!hasStock) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 7;
+    td.className = 'hint';
+    td.textContent = 'Primero cargá el stock en la pestaña "1. Stock".';
+    tr.append(td);
+    pb.append(tr);
+    return;
+  }
+  for (const row of state.pieces) {
+    const tr = document.createElement('tr');
+    tr.append(
+      materialSelect(row),
+      input(row, 'width', 'number', { min: 0, placeholder: 'mm' }),
+      input(row, 'height', 'number', { min: 0, placeholder: 'mm' }),
+      input(row, 'quantity', 'number', { min: 1 }),
+      input(row, 'rotate', 'checkbox'),
+      input(row, 'label', 'text', { placeholder: 'Opcional' }),
+      deleteCell(state.pieces, row, renderPieces),
+    );
+    pb.append(tr);
+  }
+}
+
+function addPiece() {
+  const prev = state.pieces.at(-1) || materials()[0];
+  state.pieces.push({ id: uid(), label: '', type: prev.type, thickness: prev.thickness, width: '', height: '', quantity: 1, rotate: true });
+  save();
+  renderPieces();
+  $('#pieces-body tr:last-child input[type="number"]')?.focus();
+}
+
+$('#add-piece').addEventListener('click', addPiece);
+$('#run').addEventListener('click', run);
+
+// ---------- Resultado ----------
 
 function svgEl(tag, attrs) {
   const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
@@ -169,21 +325,12 @@ function drawSheet(sheet) {
   return svg;
 }
 
-function stat(k, v) {
-  const d = document.createElement('div');
-  d.className = 'stat';
-  d.innerHTML = `<div class="v"></div><div class="k"></div>`;
-  d.querySelector('.v').textContent = v;
-  d.querySelector('.k').textContent = k;
-  return d;
-}
-
 function renderResults(res) {
   const out = $('#results');
   out.replaceChildren();
   const card = document.createElement('section');
   card.className = 'card';
-  card.innerHTML = '<h2>Resultado</h2>';
+  card.innerHTML = '<h2>Mejor forma de cortar</h2>';
   out.append(card);
 
   const t = res.totals;
@@ -209,21 +356,17 @@ function renderResults(res) {
     card.append(warn);
   }
 
-  const finalRemnants = res.sheets.flatMap((s) => s.remnants.filter((r) => !r.consumed).map((r) => ({ ...r, type: s.type, thickness: s.thickness })));
-  if (finalRemnants.length) {
+  if (res.sheets.length) {
+    const actions = document.createElement('div');
+    actions.className = 'row';
     const b = document.createElement('button');
     b.type = 'button';
-    b.textContent = `Guardar ${finalRemnants.length} retazo(s) en el stock`;
-    b.addEventListener('click', () => {
-      for (const r of finalRemnants) {
-        state.stock.push({ id: uid(), type: r.type, thickness: r.thickness, width: Math.round(r.w), height: Math.round(r.h), quantity: 1, isRemnant: true });
-      }
-      save();
-      renderTables();
-      b.disabled = true;
-      b.textContent = 'Retazos guardados';
-    });
-    card.append(b);
+    b.className = 'primary';
+    b.textContent = 'Confirmar corte y actualizar stock';
+    b.title = 'Descuenta las planchas usadas y guarda los retazos útiles en el stock';
+    b.addEventListener('click', () => confirmCut(res, actions));
+    actions.append(b);
+    card.append(actions);
   }
 
   const legend = document.createElement('div');
@@ -234,7 +377,7 @@ function renderResults(res) {
   for (const s of res.sheets) {
     const div = document.createElement('div');
     div.className = 'sheet';
-    const origin = s.fromJob ? 'retazo de este trabajo' : s.isRemnant ? 'retazo del stock' : 'plancha';
+    const origin = s.fromJob ? 'retazo de este mismo corte' : s.isRemnant ? 'retazo del stock' : 'plancha';
     const h = document.createElement('h3');
     h.textContent = `#${s.index} · ${s.type} ${s.thickness} mm · ${s.width}×${s.height} (${origin})`;
     const meta = document.createElement('div');
@@ -245,30 +388,43 @@ function renderResults(res) {
   }
 }
 
-function run() {
-  lastResult = optimize({
-    stock: state.stock.map((s) => ({ ...s, quantity: s.quantity === '' ? null : s.quantity })),
-    pieces: state.pieces,
-    settings: state.settings,
-  });
-  renderResults(lastResult);
+function confirmCut(res, actions) {
+  state.stock = applyCut(state.stock, res, uid);
+  // Quitar del pedido las piezas que ya se cortaron; quedan las que no entraron.
+  const pending = new Map();
+  for (const u of res.unplaced) pending.set(u.pieceId, (pending.get(u.pieceId) || 0) + 1);
+  state.pieces = state.pieces.filter((p) => pending.has(p.id)).map((p) => ({ ...p, quantity: pending.get(p.id) }));
+  save();
+  renderStock();
+  renderPieces();
+  const msg = document.createElement('p');
+  msg.className = 'ok';
+  const added = res.totals.remnantCount;
+  msg.textContent = `Stock actualizado: se descontaron ${res.totals.sheetsUsed} plancha(s)/retazo(s) y se agregaron ${added} retazo(s).`;
+  actions.replaceChildren(msg);
 }
 
-$('#add-stock').addEventListener('click', () => {
-  const prev = state.stock.at(-1) || {};
-  state.stock.push({ id: uid(), type: prev.type || '', thickness: prev.thickness || 4, width: 3600, height: 2500, quantity: '', isRemnant: false });
-  save();
-  renderTables();
-});
+function validPieces() {
+  return state.pieces.filter((p) => Number(p.width) > 0 && Number(p.height) > 0 && Number(p.quantity) > 0);
+}
 
-$('#add-piece').addEventListener('click', () => {
-  const prev = state.pieces.at(-1) || {};
-  state.pieces.push({ id: uid(), label: '', type: prev.type || '', thickness: prev.thickness || 4, width: 500, height: 500, quantity: 1, rotate: true });
-  save();
-  renderTables();
-});
-
-$('#run').addEventListener('click', run);
+function run() {
+  const pieces = validPieces();
+  if (!pieces.length) {
+    $('#results').replaceChildren(Object.assign(document.createElement('p'), { className: 'warn', textContent: 'Ingresá al menos una pieza con ancho y alto.' }));
+    return;
+  }
+  const result = optimize({
+    stock: state.stock
+      .filter((s) => Number(s.width) > 0 && Number(s.height) > 0)
+      .map((s) => ({ ...s, quantity: isUnlimited(s.quantity) ? null : s.quantity })),
+    pieces,
+    settings: state.settings,
+  });
+  renderResults(result);
+}
 
 bindSettings();
-renderTables();
+renderStock();
+if (!state.pieces.length && materials().length) addPiece();
+showTab(state.stock.length ? state.tab : 'stock');

@@ -105,3 +105,33 @@ button.del { border: none; color: var(--muted); }
 .legend .l-waste::before { background: var(--waste); }
 
 .warn { color: var(--waste-stroke); }
+
+.tabs { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.tabs button[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tab[hidden] { display: none; }
+
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.summary + table { margin-top: 12px; }
+
+select {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  min-width: 160px;
+  width: 100%;
+}
+
+.file-btn {
+  display: inline-block;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--card);
+  cursor: pointer;
+}
+.file-btn input { display: none; }
+
+.ok { color: var(--remnant-stroke); font-weight: 600; }
